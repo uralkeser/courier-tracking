@@ -1,0 +1,13 @@
+{
+  "name": "courier-location-sender-app",
+  "version": "1.0.0",
+  "description": "WebSocket server for streaming courier data",
+  "main": "sender.js",
+  "scripts": {
+    "start": "node courierLocationSender.js"
+  },
+  "dependencies": {
+    "ws": "^8.13.0",
+    "moment": "^2.29.1"
+  }
+}
