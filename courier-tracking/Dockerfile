@@ -13,8 +13,19 @@ FROM eclipse-temurin:17-jdk-alpine
 
 WORKDIR /app
 
+# Copy the built JAR file
 COPY --from=builder /app/target/*.jar app.jar
 
+# Create a writable logs directory
+RUN mkdir -p /app/logs
+
+# Set environment variables for logging
+ENV LOGGING_FILE_PATH=/app/logs
+ENV LOGGING_FILE_NAME=application.log
+
+# Expose the application port
 EXPOSE 8080
 
+# Start the application
 CMD ["java", "-jar", "app.jar"]
+
