@@ -14,8 +14,8 @@ public class StoreDTO {
     private String name;
 
     @JsonProperty("lat")
-    private double latitude;
+    private Double latitude;
 
     @JsonProperty("lng")
-    private double longitude;
+    private Double longitude;
 }

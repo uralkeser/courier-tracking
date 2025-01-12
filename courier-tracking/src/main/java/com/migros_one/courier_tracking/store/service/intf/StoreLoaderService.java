@@ -6,5 +6,6 @@ import java.io.IOException;
 import java.util.List;
 
 public interface StoreLoaderService {
+
     public List<StoreDTO> readStores() throws IOException;
 }
