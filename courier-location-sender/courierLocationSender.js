@@ -16,7 +16,7 @@ function generateRandomLocation() {
 // Generate courier data
 function generateCourierData() {
   return {
-    time: moment().format('DD/MM/YYYY HH:mm:ss'),
+    time: moment(new Date()).utc().format('YYYY-MM-DDTHH:mm:ss'),
     courierId: Math.floor(Math.random() * 5) + 1, // Random courier ID (1-5)
     ...generateRandomLocation(),
   };
