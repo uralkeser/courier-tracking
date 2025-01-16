@@ -14,6 +14,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -27,13 +28,13 @@ import java.time.LocalDateTime;
 @Entity
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "courier_last_store_entrance",
+@Table(name = "courier_store_entrance_log",
     indexes = {
-        @Index(name = "ix_courier_store_last_entrance", columnList = "courier_id, store_name, last_entrance"),
+        @Index(name = "ix_courier_store_entrance", columnList = "courier_id, store_name, entrance"),
         @Index(name = "ix_courier_store", columnList = "courier_id, store_name"),
     }
 )
-public class CourierLastStoreEntranceEntity {
+public class CourierStoreEntranceLogEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -48,8 +49,8 @@ public class CourierLastStoreEntranceEntity {
     @JoinColumn(name = "store_name", referencedColumnName = "name", nullable = false, foreignKey = @ForeignKey(name = "FK_STORE_NAME"))
     private StoreEntity store;
 
-    @Column(name = "last_entrance", nullable = false)
     @NotBlank
-    private LocalDateTime lastEntrance;
+    @Column(name = "entrance", nullable = false)
+    private LocalDateTime entrance;
 
 }

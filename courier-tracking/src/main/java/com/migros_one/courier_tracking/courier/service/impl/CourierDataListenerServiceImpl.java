@@ -3,7 +3,7 @@ package com.migros_one.courier_tracking.courier.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.migros_one.courier_tracking.courier.dto.CourierLocationDTO;
+import com.migros_one.courier_tracking.courier.dto.CourierDTO;
 import com.migros_one.courier_tracking.courier.service.intf.CourierService;
 import com.migros_one.courier_tracking.store.dto.StoreDTO;
 
@@ -24,36 +24,32 @@ import java.util.List;
 public class CourierDataListenerServiceImpl extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(CourierDataListenerServiceImpl.class);
-    private final StoreLoaderService storeLoaderService;
     private final CourierService courierService;
-
 
     @Override
     public void handleTextMessage(WebSocketSession session, TextMessage message) {
+        log.info("Received message: " + message.getPayload());
         String payload = message.getPayload();
         handleCourierMessage(payload);
-        log.info("Received message: " + message.getPayload());
     }
 
     protected void handleCourierMessage(String message) {
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         try {
-            CourierLocationDTO courierLocationDTO = objectMapper.readValue(message, CourierLocationDTO.class);
-            checkCourierNearToStores(courierLocationDTO);
+            CourierDTO courierDTO = objectMapper.readValue(message, CourierDTO.class);
+            courierService.logCourierNearToStore(courierDTO);
+            courierService.updateTotalDistance(courierDTO);
+            courierService.updateCourier(courierDTO);
         } catch (JsonProcessingException jsonMappingException){
             log.error("Cannot parse listening message for the reason: "+jsonMappingException.getMessage());
+        } catch (IOException e) {
+            log.error("Cannot read stores from json for the reason: "+e.getMessage());
+        } catch (Exception e){
+            log.error(e.getMessage());
         }
     }
 
-    protected void checkCourierNearToStores(CourierLocationDTO courierLocationDTO) {
-        try {
-            List<StoreDTO> storeDTOList = storeLoaderService.readStores();
-            courierService.checkCourierNearToStoreForUpdate(courierLocationDTO, storeDTOList);
-        } catch (IOException e) {
-            log.error("Cannot read stores from json for the reason: "+e.getMessage());
-        }
-    }
 
 
 }

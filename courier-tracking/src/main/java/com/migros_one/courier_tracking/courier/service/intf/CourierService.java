@@ -1,12 +1,16 @@
 package com.migros_one.courier_tracking.courier.service.intf;
 
 
-import com.migros_one.courier_tracking.courier.dto.CourierLocationDTO;
-import com.migros_one.courier_tracking.store.dto.StoreDTO;
+import com.migros_one.courier_tracking.courier.dto.CourierDTO;
 
-import java.util.List;
 
 public interface CourierService {
 
-    void checkCourierNearToStoreForUpdate(CourierLocationDTO courierLocationDTO, List<StoreDTO> storeDTOList);
+    void logCourierNearToStore(CourierDTO newCourierDTO) throws Exception;
+
+    void updateTotalDistance(CourierDTO newCourierDTO) throws Exception;
+
+    Double getTotalTravelDistance(Long courierId) throws Exception;
+
+    void updateCourier(CourierDTO newCourierDTO);
 }

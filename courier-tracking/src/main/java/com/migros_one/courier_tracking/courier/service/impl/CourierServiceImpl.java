@@ -1,43 +1,61 @@
 package com.migros_one.courier_tracking.courier.service.impl;
 
-import com.migros_one.courier_tracking.courier.dto.CourierLastStoreEntranceDTO;
-import com.migros_one.courier_tracking.courier.dto.CourierLocationDTO;
+import com.migros_one.courier_tracking.courier.dto.CourierDTO;
 import com.migros_one.courier_tracking.courier.entity.CourierEntity;
-import com.migros_one.courier_tracking.courier.entity.CourierLastStoreEntranceEntity;
-import com.migros_one.courier_tracking.courier.mapper.CourierLastStoreEntranceMapper;
-import com.migros_one.courier_tracking.courier.repository.CourierLastStoreEntranceRepository;
+import com.migros_one.courier_tracking.courier.entity.CourierStoreEntranceLogEntity;
+import com.migros_one.courier_tracking.courier.entity.CourierTotalDistanceEntity;
+import com.migros_one.courier_tracking.courier.mapper.CourierMapper;
+import com.migros_one.courier_tracking.courier.repository.CourierStoreEntranceLogRepository;
 import com.migros_one.courier_tracking.courier.repository.CourierRepository;
+import com.migros_one.courier_tracking.courier.repository.CourierTotalDistanceRepository;
 import com.migros_one.courier_tracking.courier.service.intf.CourierService;
 import com.migros_one.courier_tracking.store.dto.StoreDTO;
 import com.migros_one.courier_tracking.store.entity.StoreEntity;
-import com.migros_one.courier_tracking.store.repository.StoreRepository;
+import com.migros_one.courier_tracking.store.service.intf.StoreService;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 @Service
-@AllArgsConstructor(onConstructor_ = @Autowired)
+@AllArgsConstructor(onConstructor = @__(@Autowired))
 public class CourierServiceImpl implements CourierService {
 
     private static final Logger log = LoggerFactory.getLogger(CourierServiceImpl.class);
-    private final CourierLastStoreEntranceRepository lastStoreEntranceRepository;
-    private final CourierLastStoreEntranceMapper lastStoreEntranceMapper;
+    private final CourierStoreEntranceLogRepository courierStoreEntranceLogRepository;
     private final CourierRepository courierRepository;
-    private final StoreRepository storeRepository;
+    private final CourierMapper courierMapper;
+    private final StoreService storeService;
+    private final CourierTotalDistanceRepository courierTotalDistanceRepository;
 
     @Override
-    public void checkCourierNearToStoreForUpdate(CourierLocationDTO courierLocationDTO, List<StoreDTO> storeDTOList){
+    @Transactional
+    public void logCourierNearToStore(CourierDTO newCourierDTO) throws Exception{
+        List<StoreDTO> storeDTOList = storeService.loadStores();
+        Optional<CourierEntity> previousCourierEntity = courierRepository.findById(newCourierDTO.getId());
+        if(previousCourierEntity.isPresent()) {
+            saveCourierEntranceForAllStores(newCourierDTO, storeDTOList);
+        } else { //new courier
+            courierRepository.saveAndFlush(courierMapper.dtoToEntity(newCourierDTO));
+            saveCourierEntranceForAllStores(newCourierDTO, storeDTOList);
+        }
+    }
+
+    protected void saveCourierEntranceForAllStores(CourierDTO courierDTO, List<StoreDTO> storeDTOList){
         for (StoreDTO storeDTO : storeDTOList) {
-            double distance = calculateDistance(courierLocationDTO.getLatitude(), courierLocationDTO.getLongitude(), storeDTO.getLatitude(), storeDTO.getLongitude());
-            if (distance <= 100) {
-                checkLastEntranceAndUpdate(courierLocationDTO, storeDTO.getName(), distance);
+            double distance = calculateDistance(courierDTO.getLatitude(), courierDTO.getLongitude(), storeDTO.getLatitude(), storeDTO.getLongitude());
+            if (distance <= 100 && isOneMinuteElapsed(courierDTO, storeDTO.getName())) {
+                try {
+                    saveNewEntrance(courierDTO.getId(), storeDTO.getName(), courierDTO.getTime());
+                } catch (Exception e) {
+                    log.error("can not save for the reason:"+e.getMessage());
+                }
             }
         }
     }
@@ -51,54 +69,75 @@ public class CourierServiceImpl implements CourierService {
                 Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
                         Math.sin(lngDistance / 2) * Math.sin(lngDistance / 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return EARTH_RADIUS * c;
+        return EARTH_RADIUS * c * 1000; // km to m
     }
 
-    protected void checkLastEntranceAndUpdate(CourierLocationDTO courierLocationDTO, String storeName, double distance) {
-        if(isEntranceUpdateNeeded(courierLocationDTO.getCourierId(),storeName)) {
-            Optional<CourierLastStoreEntranceEntity> possibleLastEntrance = getCourierLastStoreEntranceEntityByCourierIdAndStoreName(courierLocationDTO.getCourierId(), storeName);
-            if(possibleLastEntrance.isPresent()){
-                CourierLastStoreEntranceEntity courierLastStoreEntranceEntity = possibleLastEntrance.get();
-                replaceLastEntrance(courierLastStoreEntranceEntity, courierLocationDTO.getTime());
-            } else { //first entrance
-                try{
-                    saveNewEntrance(courierLocationDTO.getCourierId(),storeName, courierLocationDTO.getTime());
-                } catch (Exception e){ //TODO: change here
-                    log.error("cannot save entrance", e.getMessage());
-                }
-            }
-            log.info("Courier " + courierLocationDTO.getCourierId() + " close to " + storeName + " with the distance "+ distance);
-        }
-    }
-
-    protected boolean isEntranceUpdateNeeded(Long courierId, String storeName){
-        LocalDateTime thresholdTime = LocalDateTime.now().minusMinutes(1);
-        return lastStoreEntranceRepository.findRecentEntrance(courierId, storeName, thresholdTime).isEmpty();
-    }
-
-    protected Optional<CourierLastStoreEntranceEntity> getCourierLastStoreEntranceEntityByCourierIdAndStoreName(Long courierId, String storeName) {
-        return lastStoreEntranceRepository.findByCourier_IdAndStore_Name(courierId, storeName);
-    }
-
-    protected void replaceLastEntrance(CourierLastStoreEntranceEntity presentStoreEntrance, LocalDateTime newEntranceTime){
-        presentStoreEntrance.setLastEntrance(newEntranceTime);
-        lastStoreEntranceMapper.entityToDTO(lastStoreEntranceRepository.save(presentStoreEntrance));
+    protected boolean isOneMinuteElapsed(CourierDTO courierDTO, String storeName){
+        LocalDateTime oneMinuteAgo = LocalDateTime.now().minusMinutes(1);
+        return courierStoreEntranceLogRepository.findRecentEntrance(courierDTO.getId(), storeName, oneMinuteAgo).isEmpty();
     }
 
     protected void saveNewEntrance(Long courierId, String storeName, LocalDateTime entranceTime) throws Exception {
-        Optional<StoreEntity> possibleStoreEntity = storeRepository.findByName(storeName);
+        Optional<StoreEntity> possibleStoreEntity = storeService.getByName(storeName);
         Optional<CourierEntity> possibleCourierEntity = courierRepository.findById(courierId);
 
         if(possibleStoreEntity.isEmpty() || possibleCourierEntity.isEmpty()){
-            throw new Exception("data not found"); //TODO: EXCEPTION CLASSES
+            throw new Exception("store or courier not found"); //TODO: EXCEPTION CLASSES
         }
 
-        CourierLastStoreEntranceDTO newEntrance = new CourierLastStoreEntranceDTO();
+        CourierStoreEntranceLogEntity newEntrance = new CourierStoreEntranceLogEntity();
         newEntrance.setCourier(possibleCourierEntity.get());
         newEntrance.setStore(possibleStoreEntity.get());
-        newEntrance.setLastEntrance(entranceTime);
-        lastStoreEntranceRepository.save(lastStoreEntranceMapper.dtoToEntity(newEntrance));
+        newEntrance.setEntrance(entranceTime);
+        courierStoreEntranceLogRepository.save(newEntrance);
     }
+
+    @Override
+    public void updateTotalDistance(CourierDTO newCourierDTO) throws Exception {
+        Optional<CourierEntity> previousCourierEntity = courierRepository.findById(newCourierDTO.getId());
+        if(previousCourierEntity.isEmpty()) {
+            throw new Exception("Courier not found"); //TODO: EXCEPTION CLASSES
+        }
+        CourierDTO previousCourierDTO = courierMapper.entityToDTO(previousCourierEntity.get());
+        double newDistance = calculateNewDistance(newCourierDTO, previousCourierDTO);
+        Optional<CourierTotalDistanceEntity> possibleCourierTotalDistanceEntity = courierTotalDistanceRepository.findByCourier_Id(previousCourierDTO.getId());
+        if(possibleCourierTotalDistanceEntity.isPresent()){
+            CourierTotalDistanceEntity entity = possibleCourierTotalDistanceEntity.get();
+            Double newTotalDistance = entity.getTotalDistance() + newDistance;
+            entity.setTotalDistance(newTotalDistance);
+            courierTotalDistanceRepository.save(entity);
+        } else { //first time
+            //TODO mapper
+            CourierTotalDistanceEntity courierTotalDistanceEntity =  new CourierTotalDistanceEntity();
+            courierTotalDistanceEntity.setCourier(courierMapper.dtoToEntity(previousCourierDTO));
+            courierTotalDistanceEntity.setTotalDistance(newDistance);
+            courierTotalDistanceRepository.save(courierTotalDistanceEntity);
+        }
+    }
+
+    protected double calculateNewDistance(CourierDTO newCourierDTO, CourierDTO previousCourierDTO){
+        return calculateDistance(newCourierDTO.getLatitude(), newCourierDTO.getLongitude(),
+                previousCourierDTO.getLatitude(), previousCourierDTO.getLongitude());
+    }
+
+    @Override
+    @Transactional
+    public void updateCourier(CourierDTO newCourierDTO){
+        courierRepository.save(courierMapper.dtoToEntity(newCourierDTO));
+    }
+
+    @Override
+    public Double getTotalTravelDistance(Long courierId) throws Exception  {
+        Optional<CourierTotalDistanceEntity> possibleCourierTotalDistanceEntity = courierTotalDistanceRepository.findByCourier_Id(courierId);
+        if(possibleCourierTotalDistanceEntity.isPresent()){
+            return possibleCourierTotalDistanceEntity.get().getTotalDistance();
+        } else {
+            throw new Exception("Courier not found"); //TODO
+        }
+    }
+
+
+
 
 
 }
